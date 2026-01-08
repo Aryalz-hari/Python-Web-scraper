@@ -1,83 +1,79 @@
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 from csv import writer
-import os
 import time
 
 BASE_URL = "https://edusanjal.com"
 START_PAGE = 1
-END_PAGE = 5
+END_PAGE = 1624 # change to 1624 later
 
-CSV_FILE = "schools.csv"
-file_exists = os.path.isfile(CSV_FILE)
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-}
-
-with open(CSV_FILE, "a", encoding="utf-8", newline="") as f:
+with open("schools.csv", "a", encoding="utf-8", newline="") as f:
     csv_writer = writer(f)
+    csv_writer.writerow([
+        "SchoolName",
+        "Link",
+        "Accreditation",
+        "Level",
+        "Address"
+    ])
 
-    if not file_exists:
-        csv_writer.writerow([
-            "SchoolName",
-            "Link",
-            "Accreditation",
-            "Level",
-            "Address"
-        ])
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-    for page in range(START_PAGE, END_PAGE + 1):
-        url = f"{BASE_URL}/school?page={page}"
+        for page_no in range(START_PAGE, END_PAGE + 1):
+            url = f"{BASE_URL}/school?page={page_no}"
+            print(f"Loading page {page_no}")
 
-        try:
-            response = requests.get(url, headers=HEADERS, timeout=15)
-            response.encoding = "utf-8"
+            page.goto(url, timeout=60000)
+            page.wait_for_selector(
+                "div.overflow-hidden.bg-white.rounded-sm.shadow-xl",
+                timeout=60000
+            )
 
-            print(f"Page {page} → Status {response.status_code}")
+            cards = page.query_selector_all(
+                "div.overflow-hidden.bg-white.rounded-sm.shadow-xl"
+            )
 
-            if response.status_code != 200:
-                continue
-
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            cards = soup.select("div.overflow-hidden.bg-white.rounded-sm.shadow-xl")
-
-            if not cards:
-                print(f"No cards found on page {page}")
-                continue
+            print(f"  Found {len(cards)} schools")
 
             for card in cards:
+                # ------------------------
+                # School Name
+                # ------------------------
+                SchoolName = card.query_selector(
+                    "a.text-xl span"
+                ).inner_text().strip()
 
-                # Link (skip image anchor automatically)
-                link_tag = card.select_one("a[href^='/school/']")
-                link = BASE_URL + link_tag["href"] if link_tag else "N/A"
+                # ------------------------
+                # School Link
+                # ------------------------
+                link = BASE_URL + card.query_selector(
+                    "a.text-xl"
+                ).get_attribute("href")
 
-                # ✅ School Name (FINAL FIX)
-                name_tag = card.select_one("a.text-xl span")
-                SchoolName = name_tag.get_text(strip=True) if name_tag else "N/A"
-
+                # ------------------------
                 # Accreditation
-                acc_li = card.find("li", title="Accreditation")
-                Accreditation = (
-                    acc_li.find("a").get_text(strip=True)
-                    if acc_li and acc_li.find("a")
-                    else "N/A"
+                # ------------------------
+                acc_el = card.query_selector(
+                    "li[title='Accreditation'] a"
                 )
+                Accreditation = acc_el.inner_text().strip() if acc_el else "N/A"
 
+                # ------------------------
                 # Level
-                level_li = card.find("li", title="Level")
-                Level = (
-                    level_li.find("span", class_="ml-2").get_text(strip=True)
-                    if level_li else "N/A"
+                # ------------------------
+                level_el = card.query_selector(
+                    "li[title='Level'] span.ml-2"
                 )
+                Level = level_el.inner_text().strip() if level_el else "N/A"
 
+                # ------------------------
                 # Address
-                address_li = card.find("li", title="Address")
-                Address = (
-                    address_li.get_text(strip=True)
-                    if address_li else "N/A"
+                # ------------------------
+                address_el = card.query_selector(
+                    "li[title='Address']"
                 )
+                Address = address_el.inner_text().strip() if address_el else "N/A"
 
                 csv_writer.writerow([
                     SchoolName,
@@ -87,11 +83,9 @@ with open(CSV_FILE, "a", encoding="utf-8", newline="") as f:
                     Address
                 ])
 
-            print(f"Page {page} scraped successfully")
-            time.sleep(1.2)
+            print(f"✅ Page {page_no} scraped")
+            time.sleep(1)  # polite delay
 
-        except requests.exceptions.RequestException as e:
-            print(f"Error on page {page}: {e}")
-            time.sleep(5)
+        browser.close()
 
-print("Scraping completed successfully!")
+print("🎉 Scraping completed successfully!")
