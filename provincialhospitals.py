@@ -10,36 +10,37 @@ headers = {
                   "Chrome/116.0.0.0 Safari/537.36"
 }
 
+# Fetch the page
 response = requests.get(URL, headers=headers)
 if response.status_code != 200:
-    print(f"Failed to fetch the page. Status code: {response.status_code}")
+    print(f"Failed to fetch page: {response.status_code}")
     exit()
 
 soup = BeautifulSoup(response.text, "html.parser")
 
-# Find all tables and print their classes to debug
-tables = soup.find_all("table")
-print(f"Found {len(tables)} tables on the page.")
-for i, t in enumerate(tables):
-    print(f"Table {i}: {t.get('class')}")
+# Find all wikitable tables
+all_tables = soup.find_all("table", class_="wikitable")
 
-# Once you see which table is correct, we target it
-table = soup.find("table", class_="wikitable sortable")  # simpler selector
+# Identify the provincial hospital table by checking for "Mechi Provincial Hospital"
+provincial_table = None
+for table in all_tables:
+    if table.find("a", string=lambda text: text and "Mechi Provincial Hospital" in text):
+        provincial_table = table
+        break
 
-if not table:
-    print("Error: Could not find the hospital table.")
+if not provincial_table:
+    print("Error: Could not find the provincial hospital table.")
     exit()
 
+# Extract provincial hospital data
 hospitals = []
-
-for row in table.find_all("tr")[1:]:  # skip header
+for row in provincial_table.find_all("tr")[1:]:  # skip header
     cols = row.find_all("td")
-    if len(cols) >= 4:
+    if len(cols) >= 3:
         name = cols[0].get_text(strip=True)
         city = cols[1].get_text(strip=True)
         province = cols[2].get_text(strip=True)
-        description = cols[3].get_text(strip=True)
-        
+        description = cols[3].get_text(strip=True) if len(cols) > 3 else ""
         hospitals.append({
             "Hospital": name,
             "City": city,
@@ -47,10 +48,11 @@ for row in table.find_all("tr")[1:]:  # skip header
             "Description": description
         })
 
-with open("nepal_hospitals.csv", "w", newline="", encoding="utf-8") as f:
+# Save to CSV
+with open("provincial_hospitals.csv", "w", newline="", encoding="utf-8") as f:
     writer = csv.DictWriter(f, fieldnames=["Hospital", "City", "Province", "Description"])
     writer.writeheader()
     for hosp in hospitals:
         writer.writerow(hosp)
 
-print(f"Scraped {len(hospitals)} hospitals. Saved to 'nepal_hospitals.csv'.")
+print(f"Scraped {len(hospitals)} provincial hospitals. Saved to 'provincial_hospitals.csv'.")
